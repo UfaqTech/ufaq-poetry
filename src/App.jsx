@@ -1,7 +1,8 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signInAnonymously, signOut, signInWithCustomToken, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signInAnonymously, signOut, createUserWithEmailAndPassword } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc, arrayUnion, arrayRemove, query, where, limit, getDocs, getDoc, setDoc, orderBy, startAfter } from 'firebase/firestore';
+import { Helmet, HelmetProvider } from 'react-helmet-async';
 import {
   Heart,
   MessageCircle,
@@ -32,12 +33,16 @@ import {
 } from 'lucide-react';
 
 // === Firebase Setup and Context ===
-// DO NOT CHANGE THESE VARIABLES. They are provided by the Canvas environment.
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-let currentUserId = null;
+// Your web app's Firebase configuration - provided by user
+const firebaseConfig = {
+  apiKey: "AIzaSyCpvJZ1zdcH410sQrdsClTQB7ItnVcTavA",
+  authDomain: "ufaqtech-143.firebaseapp.com",
+  projectId: "ufaqtech-143",
+  storageBucket: "ufaqtech-143.firebasestorage.app",
+  messagingSenderId: "245005956266",
+  appId: "1:245005956266:web:322cab7c1aa4aa3d65ccd3",
+  measurementId: "G-P2H63C8C3B"
+};
 
 const FirebaseContext = createContext(null);
 
@@ -48,57 +53,46 @@ const FirebaseProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
 
-  // IMPORTANT: Set this ADMIN_UID to the actual UID of your administrator account
-  // created in Firebase Authentication.
-  // Example UID: 'x7wO9y72czgxMZpuyuzOUtGb21'
-  const ADMIN_UID = 'FTqhvlaU59WVZEOfl3K3HQrb2n02'; // <--- **UPDATE THIS WITH YOUR ADMIN UID**
+  // IMPORTANT: This is the UID of your administrator account
+  const ADMIN_UID = 'FTqhvlaU59WVZEOfl3K3HQrb2n02';
 
+  // Effect to initialize Firebase services once.
   useEffect(() => {
-    const initializeFirebase = async () => {
-      try {
-        const app = initializeApp(firebaseConfig);
-        const firestore = getFirestore(app);
-        const firebaseAuth = getAuth(app);
-        setDb(firestore);
-        setAuth(firebaseAuth);
+    try {
+      const app = initializeApp(firebaseConfig);
+      const firestore = getFirestore(app);
+      const firebaseAuth = getAuth(app);
+      setDb(firestore);
+      setAuth(firebaseAuth);
+      setFirebaseReady(true);
+    } catch (e) {
+      console.error("Error initializing Firebase:", e);
+      setFirebaseReady(false);
+    }
+  }, []);
 
-        const unsubscribe = onAuthStateChanged(firebaseAuth, async (currentUser) => {
-          if (currentUser) {
-            currentUserId = currentUser.uid;
-            setUser(currentUser);
-            console.log("User signed in:", currentUser.uid);
-          } else {
-            try {
-              if (initialAuthToken) {
-                const credential = await signInWithCustomToken(firebaseAuth, initialAuthToken);
-                currentUserId = credential.user.uid;
-                setUser(credential.user);
-                console.log("Signed in with custom token:", credential.user.uid);
-              } else {
-                const anonymousUser = await signInAnonymously(firebaseAuth);
-                currentUserId = anonymousUser.user.uid;
-                setUser(anonymousUser.user);
-                console.log("Signed in anonymously:", anonymousUser.user.uid);
-              }
-            } catch (error) {
-              console.error("Error signing in:", error);
-            }
-          }
-          setLoadingAuth(false);
-          setFirebaseReady(true);
-        });
+  // Effect to handle user authentication state changes.
+  useEffect(() => {
+    if (!auth) return;
 
-        return () => unsubscribe();
-      } catch (e) {
-        console.error("Error initializing Firebase:", e);
-        setLoadingAuth(false);
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+        console.log("User signed in:", currentUser.uid);
+      } else {
+        try {
+          await signInAnonymously(auth);
+          console.log("Signed in anonymously.");
+        } catch (error) {
+          console.error("Error signing in anonymously:", error);
+        }
       }
-    };
+      setLoadingAuth(false);
+    });
 
-    initializeFirebase();
-  }, [initialAuthToken, firebaseConfig]);
+    return () => unsubscribe();
+  }, [auth]);
 
-  // A registered user is any user who is not anonymous
   const isRegisteredUser = user && !user.isAnonymous;
   const isAdmin = user && user.uid === ADMIN_UID;
   const value = { db, auth, user, firebaseReady, isRegisteredUser, isAdmin, loadingAuth };
@@ -112,7 +106,6 @@ const FirebaseProvider = ({ children }) => {
 
 const useFirebase = () => useContext(FirebaseContext);
 
-// A simple utility to format the date
 const formatDate = (timestamp) => {
   if (!timestamp) return '';
   const date = timestamp.toDate();
@@ -124,8 +117,8 @@ const Modal = ({ show, title, message, onConfirm, onCancel, type = 'alert' }) =>
   if (!show) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-fade-in">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm animate-zoom-in">
         <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">{title}</h3>
         <p className="text-gray-700 dark:text-gray-300 mb-6">{message}</p>
         <div className="flex justify-end space-x-4">
@@ -149,15 +142,14 @@ const Modal = ({ show, title, message, onConfirm, onCancel, type = 'alert' }) =>
   );
 };
 
-// --- New Modal for setting a display name ---
 const DisplayNameModal = ({ show, onSave, onCancel }) => {
   const [displayName, setDisplayName] = useState('');
 
   if (!show) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-fade-in">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm animate-zoom-in">
         <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100 flex items-center"><UserCheck className="mr-2 text-indigo-600" /> Set Your Display Name</h3>
         <p className="text-gray-700 dark:text-gray-300 mb-4">Please enter a name to be shown with your comments and submissions.</p>
         <input
@@ -190,8 +182,6 @@ const DisplayNameModal = ({ show, onSave, onCancel }) => {
 
 // === Main Application Components ===
 
-// This component handles the submission of new poetry.
-// Submissions from registered users are automatically approved.
 const PoetrySubmissionForm = ({ labels }) => {
   const { db, firebaseReady, user, isRegisteredUser } = useFirebase();
   const [title, setTitle] = useState('');
@@ -204,7 +194,6 @@ const PoetrySubmissionForm = ({ labels }) => {
   const [showDisplayNameModal, setShowDisplayNameModal] = useState(false);
   const [authorName, setAuthorName] = useState(null);
 
-  // Checks if the user has a display name before allowing submission
   const checkForDisplayName = async () => {
     if (!firebaseReady || !user) {
       setModalContent({
@@ -216,15 +205,14 @@ const PoetrySubmissionForm = ({ labels }) => {
       setShowModal(true);
       return;
     }
-
-    const userRef = doc(db, `artifacts/${appId}/users/${user.uid}/profile`, 'info');
+    const userRef = doc(db, `artifacts/${firebaseConfig.appId}/users/${user.uid}/profile`, 'info');
     const userSnap = await getDoc(userRef);
 
     if (userSnap.exists() && userSnap.data().displayName) {
       setAuthorName(userSnap.data().displayName);
-      handleSubmit(); // Proceed with submission
+      handleSubmit();
     } else {
-      setShowDisplayNameModal(true); // Prompt for name
+      setShowDisplayNameModal(true);
     }
   };
 
@@ -232,11 +220,11 @@ const PoetrySubmissionForm = ({ labels }) => {
     if (!name.trim()) return;
 
     try {
-      const userRef = doc(db, `artifacts/${appId}/users/${user.uid}/profile`, 'info');
+      const userRef = doc(db, `artifacts/${firebaseConfig.appId}/users/${user.uid}/profile`, 'info');
       await setDoc(userRef, { displayName: name.trim() }, { merge: true });
       setAuthorName(name.trim());
       setShowDisplayNameModal(false);
-      handleSubmit(); // Now that we have a name, submit the poetry
+      handleSubmit();
     } catch (error) {
       console.error("Error saving display name:", error);
       setModalContent({
@@ -250,7 +238,7 @@ const PoetrySubmissionForm = ({ labels }) => {
   };
 
   const handleSubmit = async (e) => {
-    if(e) e.preventDefault(); // Prevent default if called from form
+    if(e) e.preventDefault();
     if (!firebaseReady || !user || !title || !content || !selectedLabel || !language) {
       setModalContent({
         title: "Submission Error",
@@ -261,11 +249,10 @@ const PoetrySubmissionForm = ({ labels }) => {
       setShowModal(true);
       return;
     }
-
     try {
       const submissionStatus = isRegisteredUser ? 'approved' : 'pending';
       
-      await addDoc(collection(db, `artifacts/${appId}/public/data/poetries`), {
+      await addDoc(collection(db, `artifacts/${firebaseConfig.appId}/public/data/poetries`), {
         title,
         content,
         label: selectedLabel,
@@ -275,7 +262,7 @@ const PoetrySubmissionForm = ({ labels }) => {
         likes: [],
         comments: [],
         createdAt: new Date(),
-        author: authorName || (isRegisteredUser ? user.email.split('@')[0] : 'Visitor') // Default author name
+        author: authorName || (isRegisteredUser ? user.email.split('@')[0] : 'Visitor')
       });
       
       setModalContent({
@@ -304,7 +291,7 @@ const PoetrySubmissionForm = ({ labels }) => {
   };
 
   return (
-    <div className="p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-2xl mx-auto my-8">
+    <div className="p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-2xl mx-auto my-8 animate-fade-in">
       <h2 className="text-2xl font-bold mb-6 text-gray-900 dark:text-gray-100 flex items-center">
         <PenTool className="mr-2" />
         Submit Your Poetry
@@ -376,7 +363,6 @@ const PoetrySubmissionForm = ({ labels }) => {
 };
 
 
-// A component to display a single poetry piece
 const PoetryCard = ({ poetry }) => {
   const { db, user, firebaseReady, isAdmin } = useFirebase();
   const [newComment, setNewComment] = useState('');
@@ -396,7 +382,7 @@ const PoetryCard = ({ poetry }) => {
       setShowModal(true);
       return;
     }
-    const poetryRef = doc(db, `artifacts/${appId}/public/data/poetries`, poetry.id);
+    const poetryRef = doc(db, `artifacts/${firebaseConfig.appId}/public/data/poetries`, poetry.id);
     try {
       if (poetry.likes && poetry.likes.includes(user.uid)) {
         await updateDoc(poetryRef, {
@@ -432,8 +418,7 @@ const PoetryCard = ({ poetry }) => {
       return;
     }
     
-    // Check if user has a display name. If not, prompt them to set one.
-    const userRef = doc(db, `artifacts/${appId}/users/${user.uid}/profile`, 'info');
+    const userRef = doc(db, `artifacts/${firebaseConfig.appId}/users/${user.uid}/profile`, 'info');
     const userSnap = await getDoc(userRef);
 
     if (userSnap.exists() && userSnap.data().displayName) {
@@ -444,7 +429,7 @@ const PoetryCard = ({ poetry }) => {
   };
 
   const postComment = async (displayName) => {
-    const poetryRef = doc(db, `artifacts/${appId}/public/data/poetries`, poetry.id);
+    const poetryRef = doc(db, `artifacts/${firebaseConfig.appId}/public/data/poetries`, poetry.id);
     const newCommentObject = {
       userId: user.uid,
       userName: displayName,
@@ -456,7 +441,7 @@ const PoetryCard = ({ poetry }) => {
         comments: arrayUnion(newCommentObject)
       });
       setNewComment('');
-      setShowDisplayNameModal(false); // Close the modal if it was open
+      setShowDisplayNameModal(false);
     } catch (error) {
       console.error("Error adding comment:", error);
       setModalContent({
@@ -472,7 +457,7 @@ const PoetryCard = ({ poetry }) => {
   const handleSaveDisplayName = async (name) => {
     if (!name.trim()) return;
     try {
-      const userRef = doc(db, `artifacts/${appId}/users/${user.uid}/profile`, 'info');
+      const userRef = doc(db, `artifacts/${firebaseConfig.appId}/users/${user.uid}/profile`, 'info');
       await setDoc(userRef, { displayName: name.trim() }, { merge: true });
       postComment(name.trim());
     } catch (error) {
@@ -491,7 +476,7 @@ const PoetryCard = ({ poetry }) => {
   const isUrduOrSaraiki = poetry.language === 'Urdu' || poetry.language === 'Saraiki';
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-8 transform transition duration-300 hover:scale-[1.01]">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-8 transform transition duration-300 hover:scale-[1.01] animate-fade-in">
       <div className="flex justify-between items-center mb-4">
         <h3 className={`text-xl font-bold text-gray-900 dark:text-gray-100 ${isUrduOrSaraiki ? 'text-right w-full' : ''}`}>
           {poetry.title}
@@ -521,14 +506,13 @@ const PoetryCard = ({ poetry }) => {
           <span>{poetry.comments ? poetry.comments.length : 0}</span>
         </button>
       </div>
-
       {showComments && (
-        <div className="mt-6">
+        <div className="mt-6 animate-fade-in">
           <h4 className="text-md font-semibold mb-2 text-gray-900 dark:text-gray-100">Comments</h4>
           <div className="space-y-4 max-h-48 overflow-y-auto pr-2">
             {poetry.comments && poetry.comments.length > 0 ? (
               poetry.comments.map((comment, index) => (
-                <div key={index} className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                <div key={index} className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg animate-fade-in-down">
                   <p className="text-gray-800 dark:text-gray-200 text-sm">{comment.commentText}</p>
                   <p className="text-gray-500 dark:text-gray-400 text-xs mt-1">
                     - By {comment.userName} on {formatDate(comment.createdAt)}
@@ -562,7 +546,6 @@ const PoetryCard = ({ poetry }) => {
   );
 };
 
-// Component for the Admin Panel
 const AdminPanel = ({ labels, poetries }) => {
   const { db, firebaseReady, isAdmin } = useFirebase();
   const [newLabel, setNewLabel] = useState('');
@@ -571,7 +554,6 @@ const AdminPanel = ({ labels, poetries }) => {
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({});
 
-  // Function to add a new label
   const handleAddLabel = async () => {
     if (!firebaseReady || !newLabel.trim()) {
       setModalContent({
@@ -584,7 +566,7 @@ const AdminPanel = ({ labels, poetries }) => {
       return;
     }
     try {
-      await addDoc(collection(db, `artifacts/${appId}/public/data/labels`), {
+      await addDoc(collection(db, `artifacts/${firebaseConfig.appId}/public/data/labels`), {
         name: newLabel.trim(),
       });
       setNewLabel('');
@@ -607,7 +589,6 @@ const AdminPanel = ({ labels, poetries }) => {
     }
   };
 
-  // Function to delete a label
   const handleDeleteLabel = async (id) => {
     if (!firebaseReady) return;
     setModalContent({
@@ -616,7 +597,7 @@ const AdminPanel = ({ labels, poetries }) => {
       type: "confirm",
       onConfirm: async () => {
         try {
-          await deleteDoc(doc(db, `artifacts/${appId}/public/data/labels`, id));
+          await deleteDoc(doc(db, `artifacts/${firebaseConfig.appId}/public/data/labels`, id));
           setShowModal(false);
           setModalContent({
             title: "Success",
@@ -642,7 +623,6 @@ const AdminPanel = ({ labels, poetries }) => {
     setShowModal(true);
   };
 
-  // Function to save a renamed label
   const handleRenameLabel = async (id) => {
     if (!firebaseReady || !editingLabelName.trim()) {
       setModalContent({
@@ -655,7 +635,7 @@ const AdminPanel = ({ labels, poetries }) => {
       return;
     }
     try {
-      await updateDoc(doc(db, `artifacts/${appId}/public/data/labels`, id), {
+      await updateDoc(doc(db, `artifacts/${firebaseConfig.appId}/public/data/labels`, id), {
         name: editingLabelName.trim()
       });
       setEditingLabelId(null);
@@ -679,7 +659,6 @@ const AdminPanel = ({ labels, poetries }) => {
     }
   };
 
-  // Function to approve a pending poetry submission
   const handleApprovePoetry = async (poetryId) => {
     if (!firebaseReady) return;
     setModalContent({
@@ -688,7 +667,7 @@ const AdminPanel = ({ labels, poetries }) => {
       type: "confirm",
       onConfirm: async () => {
         try {
-          await updateDoc(doc(db, `artifacts/${appId}/public/data/poetries`, poetryId), {
+          await updateDoc(doc(db, `artifacts/${firebaseConfig.appId}/public/data/poetries`, poetryId), {
             status: 'approved',
             author: 'UFAQ Official'
           });
@@ -717,7 +696,6 @@ const AdminPanel = ({ labels, poetries }) => {
     setShowModal(true);
   };
 
-  // Function to delete a pending poetry submission
   const handleDeletePoetry = async (poetryId) => {
     if (!firebaseReady) return;
     setModalContent({
@@ -726,7 +704,7 @@ const AdminPanel = ({ labels, poetries }) => {
       type: "confirm",
       onConfirm: async () => {
         try {
-          await deleteDoc(doc(db, `artifacts/${appId}/public/data/poetries`, poetryId));
+          await deleteDoc(doc(db, `artifacts/${firebaseConfig.appId}/public/data/poetries`, poetryId));
           setShowModal(false);
           setModalContent({
             title: "Success",
@@ -755,14 +733,13 @@ const AdminPanel = ({ labels, poetries }) => {
   const pendingPoetries = poetries.filter(p => p.status === 'pending');
 
   return (
-    <div className="p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg my-8">
+    <div className="p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg my-8 animate-fade-in">
       <h2 className="text-3xl font-bold mb-6 text-gray-900 dark:text-gray-100 flex items-center">
         <Shield className="mr-2" />
         Admin Panel
       </h2>
       <p className="text-gray-600 dark:text-gray-300 mb-6">Manage poetry labels and approve visitor submissions.</p>
 
-      {/* Label Management Section */}
       <div className="mb-8">
         <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100 flex items-center"><List className="mr-2" /> Manage Labels</h3>
         <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-2 mb-4">
@@ -782,7 +759,7 @@ const AdminPanel = ({ labels, poetries }) => {
         </div>
         <ul className="space-y-2">
           {labels.map((label) => (
-            <li key={label.id} className="flex flex-col sm:flex-row items-center justify-between p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
+            <li key={label.id} className="flex flex-col sm:flex-row items-center justify-between p-3 bg-gray-100 dark:bg-gray-700 rounded-md animate-fade-in-down">
               {editingLabelId === label.id ? (
                 <div className="flex-grow flex items-center space-x-2 w-full sm:w-auto">
                   <input
@@ -808,13 +785,12 @@ const AdminPanel = ({ labels, poetries }) => {
         </ul>
       </div>
 
-      {/* Pending Poetry Section */}
       <div>
         <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100 flex items-center"><PenTool className="mr-2" /> Pending Submissions ({pendingPoetries.length})</h3>
         {pendingPoetries.length > 0 ? (
           <ul className="space-y-4">
             {pendingPoetries.map((poetry) => (
-              <li key={poetry.id} className="p-4 bg-gray-100 dark:bg-gray-700 rounded-md shadow-sm">
+              <li key={poetry.id} className="p-4 bg-gray-100 dark:bg-gray-700 rounded-md shadow-sm animate-fade-in-down">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2">
                   <div>
                     <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{poetry.title}</h4>
@@ -850,14 +826,13 @@ const AdminPanel = ({ labels, poetries }) => {
 };
 
 
-// === Auth/Login Component ===
 const AuthPanel = () => {
   const { auth, firebaseReady, loadingAuth, user, isAdmin } = useFirebase();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({});
-  const [showLoginForm, setShowLoginForm] = useState(true); // State to toggle between login and registration forms
+  const [showLoginForm, setShowLoginForm] = useState(true);
   
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -962,14 +937,14 @@ const AuthPanel = () => {
 
   if (loadingAuth) {
     return (
-      <div className="p-8 text-center text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
+      <div className="p-8 text-center text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-xl shadow-lg animate-pulse">
         Loading authentication...
       </div>
     );
   }
 
   return (
-    <div className="p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-md mx-auto my-8 text-gray-900 dark:text-gray-100">
+    <div className="p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-md mx-auto my-8 text-gray-900 dark:text-gray-100 animate-fade-in">
       <h2 className="text-2xl font-bold mb-6 flex items-center"><User className="mr-2" /> User & Admin Access</h2>
       
       {user ? (
@@ -998,10 +973,9 @@ const AuthPanel = () => {
             <LogOut size={20} className="mr-2" /> Logout
           </button>
         </div>
-      ) : (
+) : (
         <div>
           {showLoginForm ? (
-            // Login Form
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label htmlFor="admin-email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
@@ -1039,7 +1013,6 @@ const AuthPanel = () => {
               </p>
             </form>
           ) : (
-            // Registration Form
             <div>
               <form onSubmit={handleRegister} className="space-y-4">
                 <div>
@@ -1087,16 +1060,15 @@ const AuthPanel = () => {
   );
 };
 
-// Component to display a user's profile and their submissions
 const UserProfile = () => {
   const { user, db, firebaseReady } = useFirebase();
   const [userPoetries, setUserPoetries] = useState([]);
 
   useEffect(() => {
-    if (!firebaseReady || !user) return;
+    if (!firebaseReady || !user || !db) return;
 
     const q = query(
-      collection(db, `artifacts/${appId}/public/data/poetries`),
+      collection(db, `artifacts/${firebaseConfig.appId}/public/data/poetries`),
       where('submittedBy', '==', user.uid),
       orderBy('createdAt', 'desc')
     );
@@ -1118,7 +1090,7 @@ const UserProfile = () => {
   }
 
   return (
-    <div className="p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg my-8">
+    <div className="p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg my-8 animate-fade-in">
       <div className="flex items-center mb-6">
         <UserCircle size={40} className="text-indigo-600 dark:text-indigo-400 mr-4" />
         <div>
@@ -1139,7 +1111,6 @@ const UserProfile = () => {
 };
 
 
-// === App Component and Main UI ===
 const App = () => {
   const { firebaseReady, db, isAdmin, user, isRegisteredUser } = useFirebase();
   const [labels, setLabels] = useState([]);
@@ -1171,12 +1142,11 @@ const App = () => {
     setDarkMode(prevMode => !prevMode);
   };
 
-  // Pre-populate initial labels if the collection is empty
   useEffect(() => {
     if (!firebaseReady || !db) return;
 
     const checkAndAddDefaultLabels = async () => {
-      const labelsColRef = collection(db, `artifacts/${appId}/public/data/labels`);
+      const labelsColRef = collection(db, `artifacts/${firebaseConfig.appId}/public/data/labels`);
       const snapshot = await getDocs(labelsColRef);
       if (snapshot.empty) {
         console.log("Adding default labels...");
@@ -1193,16 +1163,14 @@ const App = () => {
   }, [db, firebaseReady]);
 
 
-  // Pre-populate initial poetries if the collection is empty
   useEffect(() => {
     if (!firebaseReady || !db) return;
 
     const checkAndAddDefaultPoetries = async () => {
-      const poetriesColRef = collection(db, `artifacts/${appId}/public/data/poetries`);
+      const poetriesColRef = collection(db, `artifacts/${firebaseConfig.appId}/public/data/poetries`);
       const snapshot = await getDocs(poetriesColRef);
       if (snapshot.empty) {
         console.log("Adding default poetries...");
-        // Mirza Ghalib
         await addDoc(poetriesColRef, {
           title: "ہزاروں خواہشیں ایسی",
           content: `ہزاروں خواہشیں ایسی کہ ہر خواہش پہ دم نکلے
@@ -1229,7 +1197,6 @@ const App = () => {
           createdAt: new Date(2023, 1, 20),
           author: "Mirza Ghalib"
         });
-        // Jaun Elia
         await addDoc(poetriesColRef, {
           title: "جو گزاری نہ جا سکی ہم سے",
           content: `جو گزاری نہ جا سکی ہم سے
@@ -1256,7 +1223,6 @@ const App = () => {
           createdAt: new Date(2023, 3, 5),
           author: "Jaun Elia"
         });
-        // Shakir Shuja Abadi (Saraiki)
         await addDoc(poetriesColRef, {
           title: "توں محنت کر، تے محنت دا صلہ جانے",
           content: `توں محنت کر، تے محنت دا صلہ جانے خدا جانے
@@ -1283,7 +1249,6 @@ const App = () => {
           createdAt: new Date(2023, 5, 10),
           author: "Shakir Shuja Abadi"
         });
-        // Quotes
         await addDoc(poetriesColRef, {
           title: "Life is what happens...",
           content: `Life is what happens when you're busy making other plans.`,
@@ -1308,7 +1273,6 @@ const App = () => {
           createdAt: new Date(2023, 7, 15),
           author: "Steve Jobs"
         });
-        // Sample pending poetry
         await addDoc(poetriesColRef, {
           title: "My New English Poem (Pending)",
           content: `This is a test poem submitted by a visitor.
@@ -1328,11 +1292,10 @@ It needs admin approval to be visible on the main page.`,
   }, [db, firebaseReady]);
 
 
-  // Listen for real-time updates to labels
   useEffect(() => {
     if (!firebaseReady || !db) return;
 
-    const labelsUnsub = onSnapshot(collection(db, `artifacts/${appId}/public/data/labels`), (snapshot) => {
+    const labelsUnsub = onSnapshot(collection(db, `artifacts/${firebaseConfig.appId}/public/data/labels`), (snapshot) => {
       const labelsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setLabels(labelsData);
     });
@@ -1342,12 +1305,11 @@ It needs admin approval to be visible on the main page.`,
     };
   }, [db, firebaseReady]);
 
-  // Function to fetch paginated poetry
   const fetchPoetries = async (nextPage = false) => {
     if (!firebaseReady || !db) return;
     setLoadingPoetries(true);
 
-    const poetryColRef = collection(db, `artifacts/${appId}/public/data/poetries`);
+    const poetryColRef = collection(db, `artifacts/${firebaseConfig.appId}/public/data/poetries`);
     let q = query(
       poetryColRef,
       where('status', '==', 'approved'),
@@ -1361,7 +1323,7 @@ It needs admin approval to be visible on the main page.`,
         where('status', '==', 'approved'),
         orderBy('createdAt', 'desc'),
         startAfter(lastVisible),
-        limit(poetriesPerPage)
+      limit(poetriesPerPage)
       );
     }
     
@@ -1379,7 +1341,6 @@ It needs admin approval to be visible on the main page.`,
     }
   };
 
-  // Fetch initial batch of poetry on component load
   useEffect(() => {
     fetchPoetries();
   }, [firebaseReady, db]);
@@ -1396,20 +1357,42 @@ It needs admin approval to be visible on the main page.`,
 
   return (
     <div className={`min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans p-4 transition-colors duration-300`}>
-      {/* Google Fonts for Urdu - Noto Nastaliq Urdu */}
-      {/* This is a temporary solution for self-contained code. In a real project, this would be in the public/index.html file. */}
+      <HelmetProvider>
+        <Helmet>
+          <title>UfaqTech Poetry by Awais Nawaz - Urdu, Saraiki, English Gazal & Quotes</title>
+          <meta name="description" content="Explore a collection of poetry from Awais Nawaz and UfaqTech. Find beautiful Urdu poetry, Saraiki poetry, English poems, ghazals, and inspiring quotes. Submit your own creative writing!" />
+          <meta name="keywords" content="Awais Nawaz, UfaqTech, Awais poetry, ufaqTech poetry, saraki poetry, urdu poetry, English poetry, Gazal, quotes, Ufaq poetry" />
+          <meta name="author" content="Awais Nawaz" />
+        </Helmet>
+      </HelmetProvider>
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
       <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet" />
       <style>
         {`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeInDown {
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes zoomIn {
+          from { opacity: 0; transform: scale(0.9); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
+        .animate-fade-in-down { animation: fadeInDown 0.3s ease-out forwards; }
+        .animate-zoom-in { animation: zoomIn 0.3s ease-out forwards; }
+        .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        
         .font-urdu {
           font-family: 'Noto Nastaliq Urdu', serif;
         }
         `}
       </style>
-
-      <header className="py-6 px-8 bg-white dark:bg-gray-800 shadow-md rounded-xl mb-8 flex flex-col sm:flex-row justify-between items-center">
+      <header className="py-6 px-8 bg-white dark:bg-gray-800 shadow-md rounded-xl mb-8 flex flex-col sm:flex-row justify-between items-center animate-fade-in">
         <div className="flex items-center mb-4 sm:mb-0">
           <BookOpenText size={40} className="text-indigo-600 dark:text-indigo-400 mr-3" />
           <h1 className="text-4xl font-extrabold text-indigo-600 dark:text-indigo-400">UfaqTech Poetry</h1>
@@ -1461,7 +1444,7 @@ It needs admin approval to be visible on the main page.`,
 
       <main className="container mx-auto max-w-4xl p-4">
         {showAdminSetupInfo && currentPage === 'home' && user && (
-          <div className="text-center text-sm text-gray-500 dark:text-gray-400 mb-8 p-4 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg flex flex-col sm:flex-row items-center justify-center">
+          <div className="text-center text-sm text-gray-500 dark:text-gray-400 mb-8 p-4 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg flex flex-col sm:flex-row items-center justify-center animate-fade-in-down">
               <Info size={18} className="mr-2 text-yellow-600 dark:text-yellow-400 mb-2 sm:mb-0" />
               <span className="mb-2 sm:mb-0">Your User ID (for admin setup): <span className="font-mono text-yellow-700 dark:text-yellow-300 ml-1 break-all">{user.uid}</span></span>
               <p className="mt-2 text-xs sm:mt-0 sm:ml-4">
@@ -1472,14 +1455,14 @@ It needs admin approval to be visible on the main page.`,
         )}
         {currentPage === 'home' && (
           <div className="flex flex-col md:flex-row gap-8">
-            <aside className="w-full md:w-1/4">
+            <aside className="w-full md:w-1/4 animate-fade-in-down">
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
                 <h3 className="text-lg font-bold mb-4 text-gray-900 dark:text-gray-100">Categories</h3>
                 <ul className="space-y-2">
                   <li>
                     <button
                       onClick={() => setSelectedLabel('All')}
-                      className={`w-full text-left px-4 py-2 rounded-lg transition duration-300 ${selectedLabel === 'All' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+                      className={`w-full text-left px-4 py-2 rounded-lg transition duration-300 font-medium ${selectedLabel === 'All' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
                     >
                       All
                     </button>
@@ -1488,7 +1471,7 @@ It needs admin approval to be visible on the main page.`,
                     <li key={label.id}>
                       <button
                         onClick={() => setSelectedLabel(label.name)}
-                        className={`w-full text-left px-4 py-2 rounded-lg transition duration-300 ${selectedLabel === label.name ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+                        className={`w-full text-left px-4 py-2 rounded-lg transition duration-300 font-medium ${selectedLabel === label.name ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
                       >
                         {label.name}
                       </button>
@@ -1514,7 +1497,7 @@ It needs admin approval to be visible on the main page.`,
                     <PoetryCard key={poetry.id} poetry={poetry} />
                   ))}
                   {hasMore && (
-                    <div className="text-center mt-4">
+                    <div className="text-center mt-4 animate-fade-in">
                       <button
                         onClick={() => fetchPoetries(true)}
                         className="px-6 py-2 bg-indigo-600 text-white rounded-full flex items-center justify-center mx-auto hover:bg-indigo-700 transition duration-300 disabled:opacity-50"
@@ -1535,7 +1518,7 @@ It needs admin approval to be visible on the main page.`,
                   )}
                 </>
               ) : (
-                <div className="p-8 text-center text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
+                <div className="p-8 text-center text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-xl shadow-lg animate-fade-in">
                   No poetry found for this category or search term. Be the first to submit!
                 </div>
               )}
@@ -1546,21 +1529,20 @@ It needs admin approval to be visible on the main page.`,
         {currentPage === 'profile' && <UserProfile />}
         {currentPage === 'admin' && isAdmin && <AdminPanel labels={labels} poetries={poetries} />}
         {currentPage === 'admin' && !isAdmin && (
-           <div className="p-8 text-center text-red-500 dark:text-red-400 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
+           <div className="p-8 text-center text-red-500 dark:text-red-400 bg-white dark:bg-gray-800 rounded-xl shadow-lg animate-fade-in">
              You do not have access to the admin panel.
            </div>
         )}
         {currentPage === 'auth' && <AuthPanel />}
       </main>
 
-      <footer className="text-center text-gray-600 dark:text-gray-400 mt-12 text-sm opacity-80">
+      <footer className="text-center text-gray-600 dark:text-gray-400 mt-12 text-sm opacity-80 animate-fade-in">
         <p>&copy; {new Date().getFullYear()} UfaqTech Poetry. All rights reserved.</p>
       </footer>
     </div>
   );
 };
 
-// Top-level component to provide the Firebase context
 const AppWrapper = () => (
   <FirebaseProvider>
     <App />
