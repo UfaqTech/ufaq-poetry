@@ -25,9 +25,24 @@ import {
 } from 'lucide-react';
 
 // === Firebase Setup and Context ===
+//
+// ⚠️ IMPORTANT: To make this app work on deployment (like GitHub Pages),
+// you MUST paste your Firebase project's configuration object below.
+// You can get this from your Firebase Project Settings.
+//
+const FIREBASE_CONFIG_PLACEHOLDER = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_AUTH_DOMAIN",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_STORAGE_BUCKET",
+  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+
 // DO NOT CHANGE THESE VARIABLES. They are provided by the Canvas environment.
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+// Use the provided config if available, otherwise use the placeholder config
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : FIREBASE_CONFIG_PLACEHOLDER;
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
 // The user ID for the logged-in user. This will be updated after auth is ready.
@@ -43,8 +58,7 @@ const FirebaseProvider = ({ children }) => {
   const [loadingAuth, setLoadingAuth] = useState(true);
 
   // IMPORTANT: Set this ADMIN_UID to the actual UID of your administrator account
-  // created in Firebase Authentication. This is the ONLY way the Admin Panel
-  // will become visible.
+  // created in Firebase Authentication.
   const ADMIN_UID = 'x7wO9y72czgxMZpuyuzOUtGb2wk1'; // <--- **UPDATE THIS WITH YOUR ADMIN UID**
 
   useEffect(() => {
@@ -854,7 +868,7 @@ const AuthPanel = () => {
                 id="admin-email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="mawais03415942806@gmail.com"
+                placeholder="admin@example.com"
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 bg-gray-100 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
               />
             </div>
@@ -865,7 +879,7 @@ const AuthPanel = () => {
                 id="admin-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Aw@is@32303"
+                placeholder="password"
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 bg-gray-100 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
               />
             </div>
@@ -1142,7 +1156,7 @@ It needs admin approval to be visible on the main page.`,
               <Info size={18} className="mr-2 text-yellow-600 dark:text-yellow-400 mb-2 sm:mb-0" />
               <span className="mb-2 sm:mb-0">Your User ID (for admin setup): <span className="font-mono text-yellow-700 dark:text-yellow-300 ml-1 break-all">{user.uid}</span></span>
               <p className="mt-2 text-xs sm:mt-0 sm:ml-4">
-                To become admin, <span className="font-bold">create a user with email/password in Firebase Authentication</span> (e.g., mawais03415942806@gmail.com / Aw@is@32303).
+                To become admin, <span className="font-bold">create a user with email/password in Firebase Authentication</span> (e.g., admin@example.com / password)
                 Then, set that user's UID as `ADMIN_UID` in `App.jsx` and log in via the "User/Admin Login" tab.
               </p>
           </div>
