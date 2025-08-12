@@ -1,7 +1,7 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signInAnonymously, signOut, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc, arrayUnion, arrayRemove, query, orderBy, getDocs } from 'firebase/firestore';
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signInAnonymously, signOut, signInWithCustomToken, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, deleteDoc, arrayUnion, arrayRemove, query, where, limit, getDocs, getDoc, setDoc, orderBy, startAfter } from 'firebase/firestore';
 import {
   Heart,
   MessageCircle,
@@ -21,31 +21,22 @@ import {
   Power,
   Info,
   BookOpenText,
-  Quote
+  Mail,
+  Lock,
+  ArrowLeft,
+  UserCheck,
+  Moon,
+  Sun,
+  ChevronsDown,
+  UserCircle
 } from 'lucide-react';
 
 // === Firebase Setup and Context ===
-//
-// ⚠️ IMPORTANT: To make this app work on deployment (like GitHub Pages),
-// you MUST paste your Firebase project's configuration object below.
-// You can get this from your Firebase Project Settings.
-//
-const FIREBASE_CONFIG_PLACEHOLDER = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
-};
-
 // DO NOT CHANGE THESE VARIABLES. They are provided by the Canvas environment.
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-// Use the provided config if available, otherwise use the placeholder config
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : FIREBASE_CONFIG_PLACEHOLDER;
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-// The user ID for the logged-in user. This will be updated after auth is ready.
 let currentUserId = null;
 
 const FirebaseContext = createContext(null);
@@ -59,10 +50,10 @@ const FirebaseProvider = ({ children }) => {
 
   // IMPORTANT: Set this ADMIN_UID to the actual UID of your administrator account
   // created in Firebase Authentication.
-  const ADMIN_UID = 'x7wO9y72czgxMZpuyuzOUtGb2wk1'; // <--- **UPDATE THIS WITH YOUR ADMIN UID**
+  // Example UID: 'x7wO9y72czgxMZpuyuzOUtGb21'
+  const ADMIN_UID = 'FTqhvlaU59WVZEOfl3K3HQrb2n02'; // <--- **UPDATE THIS WITH YOUR ADMIN UID**
 
   useEffect(() => {
-    // Initialize Firebase and sign in the user.
     const initializeFirebase = async () => {
       try {
         const app = initializeApp(firebaseConfig);
@@ -77,16 +68,13 @@ const FirebaseProvider = ({ children }) => {
             setUser(currentUser);
             console.log("User signed in:", currentUser.uid);
           } else {
-            // Sign in anonymously if no user is found
             try {
               if (initialAuthToken) {
-                // If a custom token is provided (e.g., from Canvas environment), use it
                 const credential = await signInWithCustomToken(firebaseAuth, initialAuthToken);
                 currentUserId = credential.user.uid;
                 setUser(credential.user);
                 console.log("Signed in with custom token:", credential.user.uid);
               } else {
-                // Otherwise, sign in anonymously
                 const anonymousUser = await signInAnonymously(firebaseAuth);
                 currentUserId = anonymousUser.user.uid;
                 setUser(anonymousUser.user);
@@ -100,7 +88,7 @@ const FirebaseProvider = ({ children }) => {
           setFirebaseReady(true);
         });
 
-        return () => unsubscribe(); // Cleanup auth listener
+        return () => unsubscribe();
       } catch (e) {
         console.error("Error initializing Firebase:", e);
         setLoadingAuth(false);
@@ -110,7 +98,10 @@ const FirebaseProvider = ({ children }) => {
     initializeFirebase();
   }, [initialAuthToken, firebaseConfig]);
 
-  const value = { db, auth, user, firebaseReady, isAdmin: user && user.uid === ADMIN_UID, loadingAuth };
+  // A registered user is any user who is not anonymous
+  const isRegisteredUser = user && !user.isAnonymous;
+  const isAdmin = user && user.uid === ADMIN_UID;
+  const value = { db, auth, user, firebaseReady, isRegisteredUser, isAdmin, loadingAuth };
 
   return (
     <FirebaseContext.Provider value={value}>
@@ -158,12 +149,51 @@ const Modal = ({ show, title, message, onConfirm, onCancel, type = 'alert' }) =>
   );
 };
 
+// --- New Modal for setting a display name ---
+const DisplayNameModal = ({ show, onSave, onCancel }) => {
+  const [displayName, setDisplayName] = useState('');
+
+  if (!show) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm">
+        <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100 flex items-center"><UserCheck className="mr-2 text-indigo-600" /> Set Your Display Name</h3>
+        <p className="text-gray-700 dark:text-gray-300 mb-4">Please enter a name to be shown with your comments and submissions.</p>
+        <input
+          type="text"
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          placeholder="Your name or nickname"
+          className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md mb-4 bg-gray-100 dark:bg-gray-700 dark:text-gray-100"
+        />
+        <div className="flex justify-end space-x-4">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onSave(displayName)}
+            disabled={!displayName.trim()}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 // === Main Application Components ===
 
-// This component handles the submission of new poetry by visitors.
+// This component handles the submission of new poetry.
+// Submissions from registered users are automatically approved.
 const PoetrySubmissionForm = ({ labels }) => {
-  const { db, firebaseReady, user } = useFirebase();
+  const { db, firebaseReady, user, isRegisteredUser } = useFirebase();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [selectedLabel, setSelectedLabel] = useState('');
@@ -171,9 +201,56 @@ const PoetrySubmissionForm = ({ labels }) => {
   const [message, setMessage] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({});
+  const [showDisplayNameModal, setShowDisplayNameModal] = useState(false);
+  const [authorName, setAuthorName] = useState(null);
+
+  // Checks if the user has a display name before allowing submission
+  const checkForDisplayName = async () => {
+    if (!firebaseReady || !user) {
+      setModalContent({
+        title: "Submission Error",
+        message: "Authentication is not ready. Please try again.",
+        type: "alert",
+        onConfirm: () => setShowModal(false)
+      });
+      setShowModal(true);
+      return;
+    }
+
+    const userRef = doc(db, `artifacts/${appId}/users/${user.uid}/profile`, 'info');
+    const userSnap = await getDoc(userRef);
+
+    if (userSnap.exists() && userSnap.data().displayName) {
+      setAuthorName(userSnap.data().displayName);
+      handleSubmit(); // Proceed with submission
+    } else {
+      setShowDisplayNameModal(true); // Prompt for name
+    }
+  };
+
+  const handleSaveDisplayName = async (name) => {
+    if (!name.trim()) return;
+
+    try {
+      const userRef = doc(db, `artifacts/${appId}/users/${user.uid}/profile`, 'info');
+      await setDoc(userRef, { displayName: name.trim() }, { merge: true });
+      setAuthorName(name.trim());
+      setShowDisplayNameModal(false);
+      handleSubmit(); // Now that we have a name, submit the poetry
+    } catch (error) {
+      console.error("Error saving display name:", error);
+      setModalContent({
+        title: "Error",
+        message: "Could not save your name. Please try again.",
+        type: "alert",
+        onConfirm: () => setShowModal(false)
+      });
+      setShowModal(true);
+    }
+  };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if(e) e.preventDefault(); // Prevent default if called from form
     if (!firebaseReady || !user || !title || !content || !selectedLabel || !language) {
       setModalContent({
         title: "Submission Error",
@@ -186,21 +263,24 @@ const PoetrySubmissionForm = ({ labels }) => {
     }
 
     try {
+      const submissionStatus = isRegisteredUser ? 'approved' : 'pending';
+      
       await addDoc(collection(db, `artifacts/${appId}/public/data/poetries`), {
         title,
         content,
         label: selectedLabel,
         language: language,
         submittedBy: user.uid,
-        status: 'pending',
+        status: submissionStatus,
         likes: [],
         comments: [],
         createdAt: new Date(),
-        author: 'Visitor'
+        author: authorName || (isRegisteredUser ? user.email.split('@')[0] : 'Visitor') // Default author name
       });
+      
       setModalContent({
         title: "Success!",
-        message: "Poetry submitted successfully! It is now pending admin approval.",
+        message: isRegisteredUser ? "Poetry submitted and automatically approved!" : "Poetry submitted successfully! It is now pending admin approval.",
         type: "alert",
         onConfirm: () => {
           setShowModal(false);
@@ -229,8 +309,10 @@ const PoetrySubmissionForm = ({ labels }) => {
         <PenTool className="mr-2" />
         Submit Your Poetry
       </h2>
-      <p className="mb-4 text-gray-600 dark:text-gray-300">Share your creative work with the world. Your submission will be reviewed by an admin.</p>
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <p className="mb-4 text-gray-600 dark:text-gray-300">
+        {isRegisteredUser ? "Share your creative work with the world. Your poetry will be automatically approved." : "Share your creative work. Your submission will be reviewed by an admin."}
+      </p>
+      <form onSubmit={e => { e.preventDefault(); checkForDisplayName(); }} className="space-y-4">
         <div>
           <label htmlFor="title" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
           <input
@@ -288,6 +370,7 @@ const PoetrySubmissionForm = ({ labels }) => {
         </button>
       </form>
       <Modal {...modalContent} show={showModal} />
+      <DisplayNameModal show={showDisplayNameModal} onSave={handleSaveDisplayName} onCancel={() => setShowDisplayNameModal(false)} />
     </div>
   );
 };
@@ -295,11 +378,12 @@ const PoetrySubmissionForm = ({ labels }) => {
 
 // A component to display a single poetry piece
 const PoetryCard = ({ poetry }) => {
-  const { db, user, firebaseReady } = useFirebase();
+  const { db, user, firebaseReady, isAdmin } = useFirebase();
   const [newComment, setNewComment] = useState('');
   const [showComments, setShowComments] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({});
+  const [showDisplayNameModal, setShowDisplayNameModal] = useState(false);
 
   const handleLike = async () => {
     if (!firebaseReady || !user) {
@@ -347,11 +431,23 @@ const PoetryCard = ({ poetry }) => {
       setShowModal(true);
       return;
     }
+    
+    // Check if user has a display name. If not, prompt them to set one.
+    const userRef = doc(db, `artifacts/${appId}/users/${user.uid}/profile`, 'info');
+    const userSnap = await getDoc(userRef);
 
+    if (userSnap.exists() && userSnap.data().displayName) {
+      postComment(userSnap.data().displayName);
+    } else {
+      setShowDisplayNameModal(true);
+    }
+  };
+
+  const postComment = async (displayName) => {
     const poetryRef = doc(db, `artifacts/${appId}/public/data/poetries`, poetry.id);
     const newCommentObject = {
       userId: user.uid,
-      userName: user.uid.substring(0, 8),
+      userName: displayName,
       commentText: newComment,
       createdAt: new Date()
     };
@@ -360,11 +456,30 @@ const PoetryCard = ({ poetry }) => {
         comments: arrayUnion(newCommentObject)
       });
       setNewComment('');
+      setShowDisplayNameModal(false); // Close the modal if it was open
     } catch (error) {
       console.error("Error adding comment:", error);
       setModalContent({
         title: "Comment Failed",
         message: "Could not post comment. Please try again.",
+        type: "alert",
+        onConfirm: () => setShowModal(false)
+      });
+      setShowModal(true);
+    }
+  };
+
+  const handleSaveDisplayName = async (name) => {
+    if (!name.trim()) return;
+    try {
+      const userRef = doc(db, `artifacts/${appId}/users/${user.uid}/profile`, 'info');
+      await setDoc(userRef, { displayName: name.trim() }, { merge: true });
+      postComment(name.trim());
+    } catch (error) {
+      console.error("Error saving display name:", error);
+      setModalContent({
+        title: "Error",
+        message: "Could not save your name. Please try again.",
         type: "alert",
         onConfirm: () => setShowModal(false)
       });
@@ -442,10 +557,10 @@ const PoetryCard = ({ poetry }) => {
         </div>
       )}
       <Modal {...modalContent} show={showModal} />
+      <DisplayNameModal show={showDisplayNameModal} onSave={handleSaveDisplayName} onCancel={() => setShowDisplayNameModal(false)} />
     </div>
   );
 };
-
 
 // Component for the Admin Panel
 const AdminPanel = ({ labels, poetries }) => {
@@ -704,7 +819,7 @@ const AdminPanel = ({ labels, poetries }) => {
                   <div>
                     <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{poetry.title}</h4>
                     <p className="text-sm text-gray-600 dark:text-gray-300">Label: {poetry.label} | Lang: {poetry.language}</p>
-                    <p className="text-sm text-gray-600 dark:text-gray-300">Submitted by: <span className="font-mono">{poetry.submittedBy.substring(0, 8)}...</span></p>
+                    <p className="text-sm text-gray-600 dark:text-gray-300">Submitted by: <span className="font-mono text-indigo-600 dark:text-indigo-400">{poetry.submittedBy.substring(0, 8)}...</span></p>
                   </div>
                   <div className="flex space-x-2 mt-3 sm:mt-0">
                     <button
@@ -742,7 +857,8 @@ const AuthPanel = () => {
   const [password, setPassword] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({});
-
+  const [showLoginForm, setShowLoginForm] = useState(true); // State to toggle between login and registration forms
+  
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!firebaseReady) {
@@ -779,6 +895,30 @@ const AuthPanel = () => {
       setModalContent({
         title: "Login Failed",
         message: `Login error: ${error.message}. Please check your credentials.`,
+        type: "alert",
+        onConfirm: () => setShowModal(false)
+      });
+      setShowModal(true);
+    }
+  };
+  
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    if (!firebaseReady) return;
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+      setModalContent({
+        title: "Registration Successful",
+        message: "Your account has been created and you are now logged in!",
+        type: "alert",
+        onConfirm: () => setShowModal(false)
+      });
+      setShowModal(true);
+    } catch (error) {
+      console.error("Registration error:", error);
+      setModalContent({
+        title: "Registration Failed",
+        message: `Error: ${error.message}`,
         type: "alert",
         onConfirm: () => setShowModal(false)
       });
@@ -831,7 +971,7 @@ const AuthPanel = () => {
   return (
     <div className="p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-md mx-auto my-8 text-gray-900 dark:text-gray-100">
       <h2 className="text-2xl font-bold mb-6 flex items-center"><User className="mr-2" /> User & Admin Access</h2>
-
+      
       {user ? (
         <div className="text-center">
           <p className="mb-4 text-gray-700 dark:text-gray-300">Currently signed in with User ID:</p>
@@ -842,9 +982,13 @@ const AuthPanel = () => {
             <p className="mt-4 text-green-600 dark:text-green-400 font-semibold flex items-center justify-center">
               <Check size={20} className="mr-2" /> You are logged in as Admin! (Awais Nawaz)
             </p>
-          ) : (
+          ) : user.isAnonymous ? (
             <p className="mt-4 text-gray-600 dark:text-gray-300 flex items-center justify-center">
-              <Info size={18} className="mr-2" /> This is a visitor account.
+              <Info size={18} className="mr-2" /> This is an anonymous visitor account.
+            </p>
+          ) : (
+            <p className="mt-4 text-indigo-600 dark:text-indigo-400 font-semibold flex items-center justify-center">
+              <Check size={20} className="mr-2" /> You are logged in as a Registered User.
             </p>
           )}
           <button
@@ -856,40 +1000,86 @@ const AuthPanel = () => {
         </div>
       ) : (
         <div>
-          <p className="mb-4 text-gray-600 dark:text-gray-300">
-            To access the admin panel, you must log in with an administrator account.
-            Visitor accounts are created anonymously when you first visit the site.
-          </p>
-          <form onSubmit={handleLogin} className="space-y-4">
+          {showLoginForm ? (
+            // Login Form
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label htmlFor="admin-email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+                <input
+                  type="email"
+                  id="admin-email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Example@gmail.com"
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 bg-gray-100 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                />
+              </div>
+              <div>
+                <label htmlFor="admin-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+                <input
+                  type="password"
+                  id="admin-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Password "
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 bg-gray-100 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full py-2 px-4 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition duration-300 flex items-center justify-center"
+              >
+                <Power size={20} className="mr-2" /> Login
+              </button>
+              <p className="text-center text-sm text-gray-600 dark:text-gray-400">
+                Don't have an account?{' '}
+                <button type="button" onClick={() => setShowLoginForm(false)} className="text-indigo-600 hover:text-indigo-800 font-medium">
+                  Register now
+                </button>
+              </p>
+            </form>
+          ) : (
+            // Registration Form
             <div>
-              <label htmlFor="admin-email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Admin Email</label>
-              <input
-                type="email"
-                id="admin-email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@example.com"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 bg-gray-100 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-              />
+              <form onSubmit={handleRegister} className="space-y-4">
+                <div>
+                  <label htmlFor="register-email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+                  <input
+                    type="email"
+                    id="register-email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Your Email"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 bg-gray-100 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="register-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+                  <input
+                    type="password"
+                    id="register-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Password"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 bg-gray-100 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                    required
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700 transition duration-300 flex items-center justify-center"
+                >
+                  <Check size={20} className="mr-2" /> Create Account
+                </button>
+              </form>
+              <p className="text-center text-sm text-gray-600 dark:text-gray-400 mt-4">
+                <button type="button" onClick={() => setShowLoginForm(true)} className="text-indigo-600 hover:text-indigo-800 font-medium flex items-center mx-auto">
+                  <ArrowLeft size={16} className="mr-1" /> Back to Login
+                </button>
+              </p>
             </div>
-            <div>
-              <label htmlFor="admin-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Admin Password</label>
-              <input
-                type="password"
-                id="admin-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="password"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 bg-gray-100 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-              />
-            </div>
-            <button
-              type="submit"
-              className="w-full py-2 px-4 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition duration-300 flex items-center justify-center"
-            >
-              <Power size={20} className="mr-2" /> Login as Admin
-            </button>
-          </form>
+          )}
         </div>
       )}
       <Modal {...modalContent} show={showModal} />
@@ -897,16 +1087,89 @@ const AuthPanel = () => {
   );
 };
 
+// Component to display a user's profile and their submissions
+const UserProfile = () => {
+  const { user, db, firebaseReady } = useFirebase();
+  const [userPoetries, setUserPoetries] = useState([]);
+
+  useEffect(() => {
+    if (!firebaseReady || !user) return;
+
+    const q = query(
+      collection(db, `artifacts/${appId}/public/data/poetries`),
+      where('submittedBy', '==', user.uid),
+      orderBy('createdAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const poetries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setUserPoetries(poetries);
+    });
+
+    return () => unsubscribe();
+  }, [db, firebaseReady, user]);
+
+  if (!user) {
+    return (
+      <div className="p-8 text-center text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
+        Please log in to view your profile.
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg my-8">
+      <div className="flex items-center mb-6">
+        <UserCircle size={40} className="text-indigo-600 dark:text-indigo-400 mr-4" />
+        <div>
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100">My Profile</h2>
+          <p className="text-gray-600 dark:text-gray-300">Your User ID: <span className="font-mono text-sm break-all">{user.uid}</span></p>
+        </div>
+      </div>
+      <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">My Submissions</h3>
+      {userPoetries.length > 0 ? (
+        userPoetries.map((poetry) => (
+          <PoetryCard key={poetry.id} poetry={poetry} />
+        ))
+      ) : (
+        <p className="text-gray-500 dark:text-gray-400 italic">You have not submitted any poetry yet.</p>
+      )}
+    </div>
+  );
+};
+
 
 // === App Component and Main UI ===
 const App = () => {
-  const { firebaseReady, db, isAdmin, user } = useFirebase();
+  const { firebaseReady, db, isAdmin, user, isRegisteredUser } = useFirebase();
   const [labels, setLabels] = useState([]);
   const [poetries, setPoetries] = useState([]);
   const [selectedLabel, setSelectedLabel] = useState('All');
   const [currentPage, setCurrentPage] = useState('home');
   const [searchTerm, setSearchTerm] = useState('');
   const [showAdminSetupInfo, setShowAdminSetupInfo] = useState(true);
+  const [lastVisible, setLastVisible] = useState(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingPoetries, setLoadingPoetries] = useState(false);
+  const poetriesPerPage = 5;
+
+  const [darkMode, setDarkMode] = useState(() => {
+    const savedMode = localStorage.getItem('theme');
+    return savedMode === 'dark';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('theme', darkMode ? 'dark' : 'light');
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
+
+  const toggleDarkMode = () => {
+    setDarkMode(prevMode => !prevMode);
+  };
 
   // Pre-populate initial labels if the collection is empty
   useEffect(() => {
@@ -1065,44 +1328,76 @@ It needs admin approval to be visible on the main page.`,
   }, [db, firebaseReady]);
 
 
-  // Listen for real-time updates to labels and poetries
+  // Listen for real-time updates to labels
   useEffect(() => {
     if (!firebaseReady || !db) return;
 
-    // Listen for real-time updates to labels
     const labelsUnsub = onSnapshot(collection(db, `artifacts/${appId}/public/data/labels`), (snapshot) => {
       const labelsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setLabels(labelsData);
     });
 
-    // Listen for real-time updates to poetries, ordered by creation date
-    const q = query(collection(db, `artifacts/${appId}/public/data/poetries`), orderBy("createdAt", "desc"));
-    const poetriesUnsub = onSnapshot(q, (snapshot) => {
-      const poetriesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setPoetries(poetriesData);
-    });
-
     return () => {
       labelsUnsub();
-      poetriesUnsub();
     };
   }, [db, firebaseReady]);
 
+  // Function to fetch paginated poetry
+  const fetchPoetries = async (nextPage = false) => {
+    if (!firebaseReady || !db) return;
+    setLoadingPoetries(true);
+
+    const poetryColRef = collection(db, `artifacts/${appId}/public/data/poetries`);
+    let q = query(
+      poetryColRef,
+      where('status', '==', 'approved'),
+      orderBy('createdAt', 'desc'),
+      limit(poetriesPerPage)
+    );
+
+    if (nextPage && lastVisible) {
+      q = query(
+        poetryColRef,
+        where('status', '==', 'approved'),
+        orderBy('createdAt', 'desc'),
+        startAfter(lastVisible),
+        limit(poetriesPerPage)
+      );
+    }
+    
+    try {
+      const documentSnapshots = await getDocs(q);
+      const newPoetries = documentSnapshots.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      setPoetries(prevPoetries => [...prevPoetries, ...newPoetries]);
+      setLastVisible(documentSnapshots.docs[documentSnapshots.docs.length - 1]);
+      setHasMore(newPoetries.length === poetriesPerPage);
+    } catch (error) {
+      console.error("Error fetching poetries:", error);
+    } finally {
+      setLoadingPoetries(false);
+    }
+  };
+
+  // Fetch initial batch of poetry on component load
+  useEffect(() => {
+    fetchPoetries();
+  }, [firebaseReady, db]);
+
   const filteredPoetries = poetries
-    .filter(p => p.status === 'approved')
     .filter(p => selectedLabel === 'All' || p.label === selectedLabel)
     .filter(p =>
       p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.author.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.author && p.author.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (p.language && p.language.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (p.label && p.label.toLowerCase().includes(searchTerm.toLowerCase()))
     );
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans p-4">
+    <div className={`min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans p-4 transition-colors duration-300`}>
       {/* Google Fonts for Urdu - Noto Nastaliq Urdu */}
-      {/* Added directly in App.jsx for self-containment, but ideally in index.html <head> */}
+      {/* This is a temporary solution for self-contained code. In a real project, this would be in the public/index.html file. */}
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
       <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet" />
@@ -1120,7 +1415,7 @@ It needs admin approval to be visible on the main page.`,
           <h1 className="text-4xl font-extrabold text-indigo-600 dark:text-indigo-400">UfaqTech Poetry</h1>
           <span className="ml-2 text-xl font-medium text-gray-500 dark:text-gray-400">by UFAQ</span>
         </div>
-        <nav className="flex flex-wrap justify-center space-x-2 sm:space-x-4">
+        <nav className="flex flex-wrap justify-center space-x-2 sm:space-x-4 mt-4 sm:mt-0 items-center">
           <button
             onClick={() => { setCurrentPage('home'); setShowAdminSetupInfo(true); }}
             className={`px-4 py-2 rounded-full transition duration-300 font-medium ${currentPage === 'home' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
@@ -1133,6 +1428,14 @@ It needs admin approval to be visible on the main page.`,
           >
             Submit Poetry
           </button>
+          {user && (
+            <button
+              onClick={() => { setCurrentPage('profile'); setShowAdminSetupInfo(false); }}
+              className={`px-4 py-2 rounded-full transition duration-300 font-medium ${currentPage === 'profile' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+            >
+              My Profile
+            </button>
+          )}
           <button
             onClick={() => { setCurrentPage('auth'); setShowAdminSetupInfo(false); }}
             className={`px-4 py-2 rounded-full transition duration-300 font-medium ${currentPage === 'auth' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
@@ -1147,6 +1450,12 @@ It needs admin approval to be visible on the main page.`,
               Admin Panel
             </button>
           )}
+          <button
+            onClick={toggleDarkMode}
+            className="p-2 ml-2 rounded-full transition duration-300 bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+          >
+            {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
         </nav>
       </header>
 
@@ -1156,7 +1465,7 @@ It needs admin approval to be visible on the main page.`,
               <Info size={18} className="mr-2 text-yellow-600 dark:text-yellow-400 mb-2 sm:mb-0" />
               <span className="mb-2 sm:mb-0">Your User ID (for admin setup): <span className="font-mono text-yellow-700 dark:text-yellow-300 ml-1 break-all">{user.uid}</span></span>
               <p className="mt-2 text-xs sm:mt-0 sm:ml-4">
-                To become admin, <span className="font-bold">create a user with email/password in Firebase Authentication</span> (e.g., admin@example.com / password)
+                To become admin, <span className="font-bold">create a user with email/password in Firebase Authentication</span> (e.g., mawais03415942806@gmail.com / Aw@is@32303).
                 Then, set that user's UID as `ADMIN_UID` in `App.jsx` and log in via the "User/Admin Login" tab.
               </p>
           </div>
@@ -1200,9 +1509,31 @@ It needs admin approval to be visible on the main page.`,
             </aside>
             <section className="w-full md:w-3/4">
               {filteredPoetries.length > 0 ? (
-                filteredPoetries.map((poetry) => (
-                  <PoetryCard key={poetry.id} poetry={poetry} />
-                ))
+                <>
+                  {filteredPoetries.map((poetry) => (
+                    <PoetryCard key={poetry.id} poetry={poetry} />
+                  ))}
+                  {hasMore && (
+                    <div className="text-center mt-4">
+                      <button
+                        onClick={() => fetchPoetries(true)}
+                        className="px-6 py-2 bg-indigo-600 text-white rounded-full flex items-center justify-center mx-auto hover:bg-indigo-700 transition duration-300 disabled:opacity-50"
+                        disabled={loadingPoetries}
+                      >
+                        {loadingPoetries ? (
+                          <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        ) : (
+                          <>
+                            <ChevronsDown size={20} className="mr-2" /> Load More
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </>
               ) : (
                 <div className="p-8 text-center text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
                   No poetry found for this category or search term. Be the first to submit!
@@ -1212,6 +1543,7 @@ It needs admin approval to be visible on the main page.`,
           </div>
         )}
         {currentPage === 'submit' && <PoetrySubmissionForm labels={labels} />}
+        {currentPage === 'profile' && <UserProfile />}
         {currentPage === 'admin' && isAdmin && <AdminPanel labels={labels} poetries={poetries} />}
         {currentPage === 'admin' && !isAdmin && (
            <div className="p-8 text-center text-red-500 dark:text-red-400 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
